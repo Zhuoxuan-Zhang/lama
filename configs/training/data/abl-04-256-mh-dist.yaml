@@ -2,7 +2,7 @@
 
 batch_size: 10
 val_batch_size: 2
-num_workers: 3
+num_workers: 1
 
 train:
   indir: ${location.data_root_dir}/train
@@ -99,7 +99,7 @@ val:
 #      num_workers: ${data.num_workers}
 
 visual_test:
-  indir: ${location.data_root_dir}/visual_test
+  indir: ${location.data_root_dir}/val
   img_suffix: .png
   pad_out_to_modulo: 32
   dataloader_kwargs:

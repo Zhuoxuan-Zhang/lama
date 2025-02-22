@@ -1,4 +1,4 @@
-name: lama
+name: correct_lama
 channels:
   - defaults
   - conda-forge
