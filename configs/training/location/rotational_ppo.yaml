@@ -1,0 +1,3 @@
+data_root_dir: /users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/rotational_arc
+out_root_dir: /users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/ppo_rotational_arc
+tb_dir: /users/zzhan513/data/zzhan513/visual_reasoning/lama/hori_tb_logs/

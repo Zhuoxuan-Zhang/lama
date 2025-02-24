@@ -1,7 +1,12 @@
 import logging
-
+import os
 import torch
 import torch.nn.functional as F
+from torchvision import models
+import torchvision.transforms as transforms
+import torchvision.utils as vutils
+
+import torch.nn as nn
 from omegaconf import OmegaConf
 
 from saicinpainting.training.data.datasets import make_constant_area_crop_params
@@ -22,6 +27,20 @@ def make_constant_area_crop_batch(batch, **kwargs):
     batch['mask'] = batch['mask'][:, :, crop_y: crop_y + crop_height, crop_x: crop_x + crop_width]
     return batch
 
+class ResNetSymmetryClassifier(nn.Module):
+    def __init__(self):
+        super(ResNetSymmetryClassifier, self).__init__()
+        self.model = models.resnet18(pretrained=True)
+        self.model.fc = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),  # Dropout to prevent overfitting
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        return self.model(x)
 
 class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
     def __init__(self, *args, concat_mask=True, rescale_scheduler_kwargs=None, image_to_discriminator='predicted_image',
@@ -43,6 +62,13 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         self.fake_fakes_proba = fake_fakes_proba
         if self.fake_fakes_proba > 1e-3:
             self.fake_fakes_gen = FakeFakesGenerator(**(fake_fakes_generator_kwargs or {}))
+
+        
+        # Load the symmetry classifier
+        self.symmetry_classifier = ResNetSymmetryClassifier()
+        self.symmetry_classifier.load_state_dict(torch.load("/users/zzhan513/data/zzhan513/visual_reasoning/train_repaint/guided-diffusion/reward_models/is_horizontal_classifier.pth"))
+        self.symmetry_classifier.to(self.device)
+        self.symmetry_classifier.eval()  # Set to eval mode to avoid updating weights
 
     def forward(self, batch):
         if self.training and self.rescale_size_getter is not None:
@@ -118,6 +144,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                                                                          discr_fake_pred=discr_fake_pred,
                                                                          mask=mask_for_discr)
         total_loss = total_loss + adv_gen_loss
+        print("adv_gen_loss: ", adv_gen_loss)
         metrics['gen_adv'] = adv_gen_loss
         metrics.update(add_prefix_to_keys(adv_metrics, 'adv_'))
 
@@ -134,8 +161,38 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             resnet_pl_value = self.loss_resnet_pl(predicted_img, img)
             total_loss = total_loss + resnet_pl_value
             metrics['gen_resnet_pl'] = resnet_pl_value
+        symmetry_reward = self.compute_symmetry_reward(predicted_img).mean()
+        # NOTE: -0.2 *symmetry_reward horizontal is working: mse 77
+        # NOTE: -0.2 *symmetry_reward rotational is working: mse 41.98
+        scaled_loss = torch.exp(-0.1 *symmetry_reward) * total_loss
+        LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
+        LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
+        LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")
+        return scaled_loss, metrics
+    
+    def compute_symmetry_reward(self, generated_images):
+        """
+        Compute the reward based on the classifier's symmetry prediction.
+        """
+        transform = transforms.Compose([
+            transforms.Resize((256, 256)),  # Resize to match training size
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # Apply the same normalization
+        ])
+        self.symmetry_classifier.eval()  # Set to evaluation mode
+        with torch.no_grad():
+            generated_images = generated_images.detach()  # Prevent gradient tracking
+            # Apply normalization
+            normalized_images = transform(generated_images)
 
-        return total_loss, metrics
+            # Get classifier predictions
+            scores = self.symmetry_classifier(normalized_images.to(self.device)).squeeze()
+
+            rewards = scores.squeeze()  # Remove extra dimensions
+
+        # Normalize reward to range [-1, 1] for stable scaling
+        normalized_reward = 2 * (rewards - 0.5)
+        normalized_reward = torch.clamp(normalized_reward, -0.5, 0.5)
+        return normalized_reward 
 
     def discriminator_loss(self, batch):
         total_loss = 0
