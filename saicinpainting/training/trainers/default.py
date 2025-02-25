@@ -214,11 +214,9 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         for char_img, char in zip(char_images, characters):
             if char in ["+", "*", '=']:
                 equation += char
-                # FIXME: This is a hack to record confidence for the next digit after an operator and before another operator
+                # FIXME: This is a hack to record confidence for the next digit after an operator
                 if char in "+" or char in "*":
                     record_confidence = True
-                else:
-                    record_confidence = False
             else:
                 predicted_label, confidence = classifier.predict(char_img)
                 if predicted_label is not None and confidence > 0.5:
@@ -231,6 +229,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                 confidence = confidence if confidence is not None else 0.0
                 if record_confidence:
                     confidences.append(confidence)
+                    record_confidence = False
 
         # Evaluate the equation
         try:
