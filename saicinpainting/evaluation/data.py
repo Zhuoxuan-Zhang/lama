@@ -1,6 +1,6 @@
 import glob
 import os
-
+import json
 import cv2
 import PIL.Image as Image
 import numpy as np
@@ -60,6 +60,12 @@ class InpaintingDataset(Dataset):
         self.datadir = datadir
         self.mask_filenames = sorted(list(glob.glob(os.path.join(self.datadir, '**', '*mask*.png'), recursive=True)))
         self.img_filenames = [fname.rsplit('_mask', 1)[0] + img_suffix for fname in self.mask_filenames]
+        self.location_files = [
+            os.path.splitext(fname)[0] + '.json'  # Replace .jpg with .json
+            for fname in self.img_filenames
+            if os.path.exists(os.path.splitext(fname)[0] + '.json')]
+        assert len(self.img_filenames) == len(self.mask_filenames) == len(self.location_files), \
+            "Number of images, masks and location files should be the same"
         self.pad_out_to_modulo = pad_out_to_modulo
         self.scale_factor = scale_factor
 
@@ -69,7 +75,13 @@ class InpaintingDataset(Dataset):
     def __getitem__(self, i):
         image = load_image(self.img_filenames[i], mode='RGB')
         mask = load_image(self.mask_filenames[i], mode='L')
-        result = dict(image=image, mask=mask[None, ...])
+
+        # load json data
+        json_path = self.location_files[i]
+        with open(json_path, 'r') as f:
+            metadata = json.load(f)
+        metadata = json.dumps(metadata)  
+        result = dict(image=image, mask=mask[None, ...], metadata=metadata)
 
         if self.scale_factor is not None:
             result['image'] = scale_image(result['image'], self.scale_factor)

@@ -3,6 +3,8 @@ import logging
 import os
 import random
 
+import json
+
 import albumentations as A
 import cv2
 import numpy as np
@@ -24,7 +26,12 @@ LOGGER = logging.getLogger(__name__)
 
 class InpaintingTrainDataset(Dataset):
     def __init__(self, indir, mask_generator, transform):
-        self.in_files = list(glob.glob(os.path.join(indir, '**', '*.jpg'), recursive=True))
+        self.in_files = sorted(glob.glob(os.path.join(indir, '**', '*.jpg'), recursive=True))
+        self.location_files = [
+            os.path.splitext(fname)[0] + '.json'  # Replace .jpg with .json
+            for fname in self.in_files
+            if os.path.exists(os.path.splitext(fname)[0] + '.json')]
+        assert len(self.in_files) == len(self.location_files), f"Number of images and metadata files doesn't match: {len(self.in_files)} != {len(self.location_files)}"
         self.mask_generator = mask_generator
         self.transform = transform
         self.iter_i = 0
@@ -38,11 +45,18 @@ class InpaintingTrainDataset(Dataset):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = self.transform(image=img)['image']
         img = np.transpose(img, (2, 0, 1))
+
+        # load json data
+        json_path = self.location_files[item]
+        with open(json_path, 'r') as f:
+            metadata = json.load(f)
+        metadata = json.dumps(metadata)
+        
         # TODO: maybe generate mask before augmentations? slower, but better for segmentation-based masks
         mask = self.mask_generator(img, iter_i=self.iter_i)
         self.iter_i += 1
         return dict(image=img,
-                    mask=mask)
+                    mask=mask, metadata=metadata)
 
 
 class InpaintingTrainWebDataset(IterableDataset):
@@ -216,11 +230,13 @@ def make_default_train_dataloader(indir, kind='default', out_size=512, mask_gen_
                                          transform=transform,
                                          **kwargs)
     elif kind == 'default_web':
+        raise NotImplementedError
         dataset = InpaintingTrainWebDataset(indir=indir,
                                             mask_generator=mask_generator,
                                             transform=transform,
                                             **kwargs)
     elif kind == 'img_with_segm':
+        raise NotImplementedError
         dataset = ImgSegmentationDataset(indir=indir,
                                          mask_generator=mask_generator,
                                          transform=transform,
@@ -261,14 +277,17 @@ def make_default_val_dataset(indir, kind='default', out_size=512, transform_vari
     if kind == 'default':
         dataset = InpaintingEvaluationDataset(indir, **kwargs)
     elif kind == 'our_eval':
+        raise NotImplementedError
         dataset = OurInpaintingEvaluationDataset(indir, **kwargs)
     elif kind == 'img_with_segm':
+        raise NotImplementedError
         dataset = ImgSegmentationDataset(indir=indir,
                                          mask_generator=mask_generator,
                                          transform=transform,
                                          out_size=out_size,
                                          **kwargs)
     elif kind == 'online':
+        raise NotImplementedError
         dataset = InpaintingEvalOnlineDataset(indir=indir,
                                               mask_generator=mask_generator,
                                               transform=transform,

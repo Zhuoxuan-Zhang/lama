@@ -8,13 +8,18 @@ import torchvision.utils as vutils
 
 import torch.nn as nn
 from omegaconf import OmegaConf
-
+import numpy  as np
+import os
+import json
+from PIL import Image
 from saicinpainting.training.data.datasets import make_constant_area_crop_params
 from saicinpainting.training.losses.distance_weighting import make_mask_distance_weighter
 from saicinpainting.training.losses.feature_matching import feature_matching_loss, masked_l1_loss
 from saicinpainting.training.modules.fake_fakes import FakeFakesGenerator
 from saicinpainting.training.trainers.base import BaseInpaintingTrainingModule, make_multiscale_noise
 from saicinpainting.utils import add_prefix_to_keys, get_ramp
+
+from saicinpainting.training.trainers.BinaryMNISTClassifier import BinaryMNISTClassifier
 
 LOGGER = logging.getLogger(__name__)
 
@@ -26,6 +31,15 @@ def make_constant_area_crop_batch(batch, **kwargs):
     batch['image'] = batch['image'][:, :, crop_y : crop_y + crop_height, crop_x : crop_x + crop_width]
     batch['mask'] = batch['mask'][:, :, crop_y: crop_y + crop_height, crop_x: crop_x + crop_width]
     return batch
+
+def unload_image(image):
+    cur_res = image.permute(1, 2, 0).detach().cpu().numpy()
+    cur_res = np.clip(cur_res * 255, 0, 255).astype('uint8')
+    img = Image.fromarray(cur_res)
+    # save the image
+    # img.save('/users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/predicted_image.png')
+    # exit()
+    return img
 
 class ResNetSymmetryClassifier(nn.Module):
     def __init__(self):
@@ -64,12 +78,6 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             self.fake_fakes_gen = FakeFakesGenerator(**(fake_fakes_generator_kwargs or {}))
 
         
-        # Load the symmetry classifier
-        self.symmetry_classifier = ResNetSymmetryClassifier()
-        self.symmetry_classifier.load_state_dict(torch.load("/users/zzhan513/data/zzhan513/visual_reasoning/train_repaint/guided-diffusion/reward_models/is_horizontal_classifier.pth"))
-        self.symmetry_classifier.to(self.device)
-        self.symmetry_classifier.eval()  # Set to eval mode to avoid updating weights
-
     def forward(self, batch):
         if self.training and self.rescale_size_getter is not None:
             cur_size = self.rescale_size_getter(self.global_step)
@@ -116,6 +124,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         predicted_img = batch[self.image_to_discriminator]
         original_mask = batch['mask']
         supervised_mask = batch['mask_for_losses']
+        metadata = batch['metadata']
 
         # L1
         l1_value = masked_l1_loss(predicted_img, img, supervised_mask,
@@ -144,7 +153,6 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                                                                          discr_fake_pred=discr_fake_pred,
                                                                          mask=mask_for_discr)
         total_loss = total_loss + adv_gen_loss
-        print("adv_gen_loss: ", adv_gen_loss)
         metrics['gen_adv'] = adv_gen_loss
         metrics.update(add_prefix_to_keys(adv_metrics, 'adv_'))
 
@@ -161,38 +169,100 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             resnet_pl_value = self.loss_resnet_pl(predicted_img, img)
             total_loss = total_loss + resnet_pl_value
             metrics['gen_resnet_pl'] = resnet_pl_value
-        symmetry_reward = self.compute_symmetry_reward(predicted_img).mean()
-        # NOTE: -0.2 *symmetry_reward horizontal is working: mse 77
-        # NOTE: -0.2 *symmetry_reward rotational is working: mse 41.98
+        symmetry_reward = self.compute_mnist_reward(predicted_img, metadata)
+        # now lamda is set to 0.1
         scaled_loss = torch.exp(-0.1 *symmetry_reward) * total_loss
         LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
         LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
         LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")
         return scaled_loss, metrics
     
-    def compute_symmetry_reward(self, generated_images):
+    def compute_mnist_reward(self, generated_images, metadata):
         """
-        Compute the reward based on the classifier's symmetry prediction.
+        Compute the reward based on the mnist equation inpainting
         """
-        transform = transforms.Compose([
-            transforms.Resize((256, 256)),  # Resize to match training size
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # Apply the same normalization
-        ])
-        self.symmetry_classifier.eval()  # Set to evaluation mode
-        with torch.no_grad():
-            generated_images = generated_images.detach()  # Prevent gradient tracking
-            # Apply normalization
-            normalized_images = transform(generated_images)
+        total_reward = []
+        for i, img in enumerate(generated_images):
+            img = unload_image(img)
+            char_images, characters = self.decompose_image(img, metadata[i])
+            is_correct, mnist_digit_count, confidences, masked_number_length = self.check_equation_correctness(char_images, characters)
+            LOGGER.info(f"is_correct: {is_correct}")
+            LOGGER.info(f"mnist_digit_count: {mnist_digit_count}")
+            LOGGER.info(f"confidences: {confidences}")
+            LOGGER.info(f"masked_number_length: {masked_number_length}")
 
-            # Get classifier predictions
-            scores = self.symmetry_classifier(normalized_images.to(self.device)).squeeze()
+            # Compute reward based on MNIST digit presence and equation correctness
+            mnist_digit_reward = mnist_digit_count / max(masked_number_length, 1)  # Fraction of valid MNIST digits
+            correctness_reward = 1.0 if is_correct else -1.0
+            confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences else 0
+            total_reward.append(0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward)
 
-            rewards = scores.squeeze()  # Remove extra dimensions
+        total_reward = sum(total_reward) / len(total_reward)
+        total_reward = torch.tensor(total_reward).to(generated_images.device)
+        return total_reward
 
-        # Normalize reward to range [-1, 1] for stable scaling
-        normalized_reward = 2 * (rewards - 0.5)
-        normalized_reward = torch.clamp(normalized_reward, -0.5, 0.5)
-        return normalized_reward 
+    def check_equation_correctness(self, char_images, characters):
+        classifier = BinaryMNISTClassifier()
+
+        equation = ""
+        mnist_digit_count = 0
+        confidences = []
+
+        record_confidence = False
+        LOGGER.info(f"characters: {characters}")
+
+        for char_img, char in zip(char_images, characters):
+            if char in ["+", "*", '=']:
+                equation += char
+                # FIXME: This is a hack to record confidence for the next digit after an operator and before another operator
+                if char in "+" or char in "*":
+                    record_confidence = True
+                else:
+                    record_confidence = False
+            else:
+                predicted_label, confidence = classifier.predict(char_img)
+                if predicted_label is not None and confidence > 0.5:
+                    if record_confidence:
+                        mnist_digit_count += 1
+                    equation += str(predicted_label)
+                else:
+                    equation += str('-1')  # Placeholder for non-MNIST digits
+                
+                confidence = confidence if confidence is not None else 0.0
+                if record_confidence:
+                    confidences.append(confidence)
+
+        # Evaluate the equation
+        try:
+            left_side, right_side = equation.split("=")
+            is_correct = eval(left_side) == eval(right_side)
+        except Exception as e:
+            is_correct = False
+
+        return is_correct, mnist_digit_count, confidences, len(confidences)
+    
+    def decompose_image(self, image, metadata):
+        char_images = []
+        characters = []
+
+        # If metadata is a JSON string, convert it back to a dictionary
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)  # Convert string back to dictionary
+
+        # Extract each character using bounding boxes
+        for bbox in metadata["bboxes"]:
+            character = bbox["character"]
+            left, top, right, bottom = bbox["left"], bbox["top"], bbox["right"], bbox["bottom"]
+            
+            char_image = image.crop((left, top, right, bottom))  # Crop character image
+
+            # Debugging prints
+            # print(f"BBox: {left, top, right, bottom}, Character: {character}")
+
+            char_images.append(char_image)
+            characters.append(character)            
+
+        return char_images, characters
 
     def discriminator_loss(self, batch):
         total_loss = 0
