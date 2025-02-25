@@ -26,13 +26,18 @@ LOGGER = logging.getLogger(__name__)
 
 class InpaintingTrainDataset(Dataset):
     def __init__(self, indir, mask_generator, transform):
-        self.in_files = sorted(glob.glob(os.path.join(indir, '**', '*.jpg'), recursive=True))
+        #FIXME: hard code mask dir
+        # self.in_files = sorted(glob.glob(os.path.join(indir, '**', '*mask*.jpg'), recursive=True))
+        self.mask_files = sorted(glob.glob(os.path.join(indir, '**', '*mask*.jpg'), recursive=True))
+        self.in_files = [fname.rsplit('_mask', 1)[0] + '.jpg' for fname in self.mask_files]
         self.location_files = [
             os.path.splitext(fname)[0] + '.json'  # Replace .jpg with .json
             for fname in self.in_files
             if os.path.exists(os.path.splitext(fname)[0] + '.json')]
-        assert len(self.in_files) == len(self.location_files), f"Number of images and metadata files doesn't match: {len(self.in_files)} != {len(self.location_files)}"
-        self.mask_generator = mask_generator
+        assert len(self.in_files) == len(self.location_files) == len(self.mask_files), f"Number of images, mask_files and metadata files doesn't match: {len(self.in_files)} != {len(self.location_files)}"
+        # self.mask_generator = mask_generator
+        self.mask_generator = None
+
         self.transform = transform
         self.iter_i = 0
 
@@ -53,7 +58,12 @@ class InpaintingTrainDataset(Dataset):
         metadata = json.dumps(metadata)
         
         # TODO: maybe generate mask before augmentations? slower, but better for segmentation-based masks
-        mask = self.mask_generator(img, iter_i=self.iter_i)
+        # mask = self.mask_generator(img, iter_i=self.iter_i)
+        mask_path = self.mask_files[item]
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+        mask = self.transform(image=mask)['image']
+        mask = np.expand_dims(mask, axis=0)
+
         self.iter_i += 1
         return dict(image=img,
                     mask=mask, metadata=metadata)
@@ -222,7 +232,8 @@ def make_default_train_dataloader(indir, kind='default', out_size=512, mask_gen_
     LOGGER.info(f'Make train dataloader {kind} from {indir}. Using mask generator={mask_generator_kind}')
 
     mask_generator = get_mask_generator(kind=mask_generator_kind, kwargs=mask_gen_kwargs)
-    transform = get_transforms(transform_variant, out_size)
+    # transform = get_transforms(transform_variant, out_size)
+    transform = get_transforms("no_augs", out_size)
 
     if kind == 'default':
         dataset = InpaintingTrainDataset(indir=indir,
