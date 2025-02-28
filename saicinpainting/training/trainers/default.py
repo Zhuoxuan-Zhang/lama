@@ -172,9 +172,9 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         symmetry_reward = self.compute_mnist_reward(predicted_img, metadata)
         # now lamda is set to 0.1, working for now
         scaled_loss = torch.exp(-0.1 *symmetry_reward) * total_loss
-        LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
-        LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
-        LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")
+        # LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
+        # LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
+        # LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")
         return scaled_loss, metrics
     
     def compute_mnist_reward(self, generated_images, metadata):
@@ -186,10 +186,10 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             img = unload_image(img)
             char_images, characters = self.decompose_image(img, metadata[i])
             is_correct, mnist_digit_count, confidences, masked_number_length = self.check_equation_correctness(char_images, characters)
-            LOGGER.info(f"is_correct: {is_correct}")
-            LOGGER.info(f"mnist_digit_count: {mnist_digit_count}")
-            LOGGER.info(f"confidences: {confidences}")
-            LOGGER.info(f"masked_number_length: {masked_number_length}")
+            # LOGGER.info(f"is_correct: {is_correct}")
+            # LOGGER.info(f"mnist_digit_count: {mnist_digit_count}")
+            # LOGGER.info(f"confidences: {confidences}")
+            # LOGGER.info(f"masked_number_length: {masked_number_length}")
 
             # Compute reward based on MNIST digit presence and equation correctness
             mnist_digit_reward = mnist_digit_count / max(masked_number_length, 1)  # Fraction of valid MNIST digits
@@ -210,7 +210,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         confidences = []
 
         record_confidence = False
-        LOGGER.info(f"characters: {characters}")
+        # LOGGER.info(f"characters: {characters}")
 
         for char_img, char in zip(char_images, characters):
             if char in ["+", "*", '=']:
