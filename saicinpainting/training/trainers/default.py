@@ -66,7 +66,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         
         # Load the symmetry classifier
         self.symmetry_classifier = ResNetSymmetryClassifier()
-        self.symmetry_classifier.load_state_dict(torch.load("/users/zzhan513/data/zzhan513/visual_reasoning/train_repaint/guided-diffusion/reward_models/is_horizontal_classifier.pth"))
+        self.symmetry_classifier.load_state_dict(torch.load("/users/zzhan513/data/zzhan513/visual_reasoning/train_repaint/guided-diffusion/reward_models/is_rotational_classifier.pth"))
         self.symmetry_classifier.to(self.device)
         self.symmetry_classifier.eval()  # Set to eval mode to avoid updating weights
 
@@ -144,7 +144,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                                                                          discr_fake_pred=discr_fake_pred,
                                                                          mask=mask_for_discr)
         total_loss = total_loss + adv_gen_loss
-        print("adv_gen_loss: ", adv_gen_loss)
+        # print("adv_gen_loss: ", adv_gen_loss)
         metrics['gen_adv'] = adv_gen_loss
         metrics.update(add_prefix_to_keys(adv_metrics, 'adv_'))
 
@@ -164,10 +164,10 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         symmetry_reward = self.compute_symmetry_reward(predicted_img).mean()
         # NOTE: -0.2 *symmetry_reward horizontal is working: mse 77
         # NOTE: -0.2 *symmetry_reward rotational is working: mse 41.98
-        scaled_loss = torch.exp(-0.1 *symmetry_reward) * total_loss
-        LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
-        LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
-        LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")
+        scaled_loss = torch.exp(-0.2 *symmetry_reward) * total_loss
+        # LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
+        # LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
+        # LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")
         return scaled_loss, metrics
     
     def compute_symmetry_reward(self, generated_images):
