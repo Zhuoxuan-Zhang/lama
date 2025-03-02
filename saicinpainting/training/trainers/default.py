@@ -171,7 +171,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             metrics['gen_resnet_pl'] = resnet_pl_value
         symmetry_reward = self.compute_mnist_reward(predicted_img, metadata)
         # now lamda is set to 0.1, working for now
-        scaled_loss = torch.exp(-0.1 *symmetry_reward) * total_loss
+        scaled_loss = torch.exp(-0.2 *symmetry_reward) * total_loss
         # LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
         # LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
         # LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")

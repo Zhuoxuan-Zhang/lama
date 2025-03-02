@@ -26,8 +26,6 @@ LOGGER = logging.getLogger(__name__)
 
 class InpaintingTrainDataset(Dataset):
     def __init__(self, indir, mask_generator, transform):
-        #FIXME: hard code mask dir
-        # self.in_files = sorted(glob.glob(os.path.join(indir, '**', '*mask*.jpg'), recursive=True))
         self.mask_files = sorted(glob.glob(os.path.join(indir, '**', '*mask*.jpg'), recursive=True))
         self.in_files = [fname.rsplit('_mask', 1)[0] + '.jpg' for fname in self.mask_files]
         self.location_files = [
@@ -123,102 +121,102 @@ class ImgSegmentationDataset(Dataset):
 
 
 def get_transforms(transform_variant, out_size):
-    if transform_variant == 'default':
-        transform = A.Compose([
-            A.RandomScale(scale_limit=0.2),  # +/- 20%
-            A.PadIfNeeded(min_height=out_size, min_width=out_size),
-            A.RandomCrop(height=out_size, width=out_size),
-            A.HorizontalFlip(),
-            A.CLAHE(),
-            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
-            A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
-            A.ToFloat()
-        ])
-    elif transform_variant == 'distortions':
-        transform = A.Compose([
-            IAAPerspective2(scale=(0.0, 0.06)),
-            IAAAffine2(scale=(0.7, 1.3),
-                       rotate=(-40, 40),
-                       shear=(-0.1, 0.1)),
-            A.PadIfNeeded(min_height=out_size, min_width=out_size),
-            A.OpticalDistortion(),
-            A.RandomCrop(height=out_size, width=out_size),
-            A.HorizontalFlip(),
-            A.CLAHE(),
-            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
-            A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
-            A.ToFloat()
-        ])
-    elif transform_variant == 'distortions_scale05_1':
-        transform = A.Compose([
-            IAAPerspective2(scale=(0.0, 0.06)),
-            IAAAffine2(scale=(0.5, 1.0),
-                       rotate=(-40, 40),
-                       shear=(-0.1, 0.1),
-                       p=1),
-            A.PadIfNeeded(min_height=out_size, min_width=out_size),
-            A.OpticalDistortion(),
-            A.RandomCrop(height=out_size, width=out_size),
-            A.HorizontalFlip(),
-            A.CLAHE(),
-            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
-            A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
-            A.ToFloat()
-        ])
-    elif transform_variant == 'distortions_scale03_12':
-        transform = A.Compose([
-            IAAPerspective2(scale=(0.0, 0.06)),
-            IAAAffine2(scale=(0.3, 1.2),
-                       rotate=(-40, 40),
-                       shear=(-0.1, 0.1),
-                       p=1),
-            A.PadIfNeeded(min_height=out_size, min_width=out_size),
-            A.OpticalDistortion(),
-            A.RandomCrop(height=out_size, width=out_size),
-            A.HorizontalFlip(),
-            A.CLAHE(),
-            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
-            A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
-            A.ToFloat()
-        ])
-    elif transform_variant == 'distortions_scale03_07':
-        transform = A.Compose([
-            IAAPerspective2(scale=(0.0, 0.06)),
-            IAAAffine2(scale=(0.3, 0.7),  # scale 512 to 256 in average
-                       rotate=(-40, 40),
-                       shear=(-0.1, 0.1),
-                       p=1),
-            A.PadIfNeeded(min_height=out_size, min_width=out_size),
-            A.OpticalDistortion(),
-            A.RandomCrop(height=out_size, width=out_size),
-            A.HorizontalFlip(),
-            A.CLAHE(),
-            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
-            A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
-            A.ToFloat()
-        ])
-    elif transform_variant == 'distortions_light':
-        transform = A.Compose([
-            IAAPerspective2(scale=(0.0, 0.02)),
-            IAAAffine2(scale=(0.8, 1.8),
-                       rotate=(-20, 20),
-                       shear=(-0.03, 0.03)),
-            A.PadIfNeeded(min_height=out_size, min_width=out_size),
-            A.RandomCrop(height=out_size, width=out_size),
-            A.HorizontalFlip(),
-            A.CLAHE(),
-            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
-            A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
-            A.ToFloat()
-        ])
-    elif transform_variant == 'non_space_transform':
-        transform = A.Compose([
-            A.CLAHE(),
-            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
-            A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
-            A.ToFloat()
-        ])
-    elif transform_variant == 'no_augs':
+    # if transform_variant == 'default':
+    #     transform = A.Compose([
+    #         A.RandomScale(scale_limit=0.2),  # +/- 20%
+    #         A.PadIfNeeded(min_height=out_size, min_width=out_size),
+    #         A.RandomCrop(height=out_size, width=out_size),
+    #         A.HorizontalFlip(),
+    #         A.CLAHE(),
+    #         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
+    #         A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
+    #         A.ToFloat()
+    #     ])
+    # elif transform_variant == 'distortions':
+    #     transform = A.Compose([
+    #         IAAPerspective2(scale=(0.0, 0.06)),
+    #         IAAAffine2(scale=(0.7, 1.3),
+    #                    rotate=(-40, 40),
+    #                    shear=(-0.1, 0.1)),
+    #         A.PadIfNeeded(min_height=out_size, min_width=out_size),
+    #         A.OpticalDistortion(),
+    #         A.RandomCrop(height=out_size, width=out_size),
+    #         A.HorizontalFlip(),
+    #         A.CLAHE(),
+    #         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
+    #         A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
+    #         A.ToFloat()
+    #     ])
+    # elif transform_variant == 'distortions_scale05_1':
+    #     transform = A.Compose([
+    #         IAAPerspective2(scale=(0.0, 0.06)),
+    #         IAAAffine2(scale=(0.5, 1.0),
+    #                    rotate=(-40, 40),
+    #                    shear=(-0.1, 0.1),
+    #                    p=1),
+    #         A.PadIfNeeded(min_height=out_size, min_width=out_size),
+    #         A.OpticalDistortion(),
+    #         A.RandomCrop(height=out_size, width=out_size),
+    #         A.HorizontalFlip(),
+    #         A.CLAHE(),
+    #         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
+    #         A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
+    #         A.ToFloat()
+    #     ])
+    # elif transform_variant == 'distortions_scale03_12':
+    #     transform = A.Compose([
+    #         IAAPerspective2(scale=(0.0, 0.06)),
+    #         IAAAffine2(scale=(0.3, 1.2),
+    #                    rotate=(-40, 40),
+    #                    shear=(-0.1, 0.1),
+    #                    p=1),
+    #         A.PadIfNeeded(min_height=out_size, min_width=out_size),
+    #         A.OpticalDistortion(),
+    #         A.RandomCrop(height=out_size, width=out_size),
+    #         A.HorizontalFlip(),
+    #         A.CLAHE(),
+    #         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
+    #         A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
+    #         A.ToFloat()
+    #     ])
+    # elif transform_variant == 'distortions_scale03_07':
+    #     transform = A.Compose([
+    #         IAAPerspective2(scale=(0.0, 0.06)),
+    #         IAAAffine2(scale=(0.3, 0.7),  # scale 512 to 256 in average
+    #                    rotate=(-40, 40),
+    #                    shear=(-0.1, 0.1),
+    #                    p=1),
+    #         A.PadIfNeeded(min_height=out_size, min_width=out_size),
+    #         A.OpticalDistortion(),
+    #         A.RandomCrop(height=out_size, width=out_size),
+    #         A.HorizontalFlip(),
+    #         A.CLAHE(),
+    #         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
+    #         A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
+    #         A.ToFloat()
+    #     ])
+    # elif transform_variant == 'distortions_light':
+    #     transform = A.Compose([
+    #         IAAPerspective2(scale=(0.0, 0.02)),
+    #         IAAAffine2(scale=(0.8, 1.8),
+    #                    rotate=(-20, 20),
+    #                    shear=(-0.03, 0.03)),
+    #         A.PadIfNeeded(min_height=out_size, min_width=out_size),
+    #         A.RandomCrop(height=out_size, width=out_size),
+    #         A.HorizontalFlip(),
+    #         A.CLAHE(),
+    #         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
+    #         A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
+    #         A.ToFloat()
+    #     ])
+    # elif transform_variant == 'non_space_transform':
+    #     transform = A.Compose([
+    #         A.CLAHE(),
+    #         A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2),
+    #         A.HueSaturationValue(hue_shift_limit=5, sat_shift_limit=30, val_shift_limit=5),
+    #         A.ToFloat()
+    #     ])
+    if transform_variant == 'no_augs':
         transform = A.Compose([
             A.ToFloat()
         ])
@@ -283,7 +281,8 @@ def make_default_val_dataset(indir, kind='default', out_size=512, transform_vari
     mask_generator = get_mask_generator(kind=kwargs.get("mask_generator_kind"), kwargs=kwargs.get("mask_gen_kwargs"))
 
     if transform_variant is not None:
-        transform = get_transforms(transform_variant, out_size)
+        # transform = get_transforms(transform_variant, out_size)
+        transform = get_transforms("no_augs", out_size)
 
     if kind == 'default':
         dataset = InpaintingEvaluationDataset(indir, **kwargs)
