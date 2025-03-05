@@ -197,7 +197,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             # confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences else 0
             # 0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward working
             # total_reward.append(0.3 * mnist_digit_reward + 0.5 * correctness_reward + 0.2 * confidence_reward)
-            total_reward.append(0.1 * mnist_digit_reward + 0.9 * correctness_reward)
+            total_reward.append(0.75 * mnist_digit_reward + 0.25 * correctness_reward)
 
         total_reward = sum(total_reward) / len(total_reward)
         total_reward = torch.tensor(total_reward).to(generated_images.device)
