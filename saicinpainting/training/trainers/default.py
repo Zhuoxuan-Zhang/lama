@@ -221,7 +221,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                     record_confidence = True
             else:
                 predicted_label, confidence = classifier.predict(char_img)
-                if predicted_label is not None and confidence > 0.5:
+                if predicted_label is not None and confidence > 0.7:
                     if record_confidence:
                         mnist_digit_count += 1
                     equation += str(predicted_label)
