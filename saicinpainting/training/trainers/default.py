@@ -194,9 +194,9 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             # Compute reward based on MNIST digit presence and equation correctness
             mnist_digit_reward = mnist_digit_count / max(masked_number_length, 1)  # Fraction of valid MNIST digits
             correctness_reward = 1.0 if is_correct else -1.0
-            confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences else 0
+            # confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences else 0
             # 0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward working
-            total_reward.append(0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward)
+            total_reward.append(0.6 * mnist_digit_reward + 0.4 * correctness_reward)
             # total_reward.append(correctness_reward)
 
         total_reward = sum(total_reward) / len(total_reward)
@@ -221,7 +221,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                     record_confidence = True
             else:
                 predicted_label, confidence = classifier.predict(char_img)
-                if predicted_label is not None and confidence > 0.7:
+                if predicted_label is not None and confidence > 0.8:
                     if record_confidence:
                         mnist_digit_count += 1
                     equation += str(predicted_label)
