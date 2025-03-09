@@ -196,7 +196,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             correctness_reward = 1.0 if is_correct else -1.0
             # confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences else 0
             # 0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward working
-            total_reward.append(0.6 * mnist_digit_reward + 0.4 * correctness_reward)
+            total_reward.append(0.75 * mnist_digit_reward + 0.25 * correctness_reward)
             # total_reward.append(correctness_reward)
 
         total_reward = sum(total_reward) / len(total_reward)
