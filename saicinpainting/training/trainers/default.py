@@ -185,7 +185,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         for i, img in enumerate(generated_images):
             img = unload_image(img)
             char_images, characters = self.decompose_image(img, metadata[i])
-            is_correct, mnist_digit_count, confidences, masked_number_length = self.check_equation_correctness(char_images, characters)
+            is_correct, mnist_digit_count, confidences, masked_number_length, entropy_penalty = self.check_equation_correctness(char_images, characters)
             # LOGGER.info(f"is_correct: {is_correct}")
             # LOGGER.info(f"mnist_digit_count: {mnist_digit_count}")
             # LOGGER.info(f"confidences: {confidences}")
@@ -196,7 +196,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             correctness_reward = 1.0 if is_correct else -1.0
             # confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences else 0
             # 0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward working
-            total_reward.append(0.75 * mnist_digit_reward + 0.25 * correctness_reward)
+            total_reward.append(0.25 * mnist_digit_reward + 0.75 * correctness_reward - 0.2 * entropy_penalty)
             # total_reward.append(correctness_reward)
 
         total_reward = sum(total_reward) / len(total_reward)
@@ -209,38 +209,40 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         equation = ""
         mnist_digit_count = 0
         confidences = []
-
-        record_confidence = False
-        # LOGGER.info(f"characters: {characters}")
+        entropy_penalty = 0.0
+        record_digit = False  # Flag to indicate when to record a digit
 
         for char_img, char in zip(char_images, characters):
-            if char in ["+", "*", '=']:
+            if char in ["+", "*", "="]:  
                 equation += char
-                # FIXME: This is a hack to record confidence for the next digit after an operator
-                if char in "+" or char in "*":
-                    record_confidence = True
-            else:
-                predicted_label, confidence = classifier.predict(char_img)
-                if predicted_label is not None and confidence > 0.9:
-                    if record_confidence:
-                        mnist_digit_count += 1
+                record_digit = True  # Next digit should be recorded
+            elif record_digit:  
+                predicted_probs = classifier.predict_proba(char_img)  # Get probability distribution
+                predicted_label = torch.argmax(predicted_probs).item()
+                confidence = predicted_probs[predicted_label].item()
+
+                if confidence > 0.8:
+                    mnist_digit_count += 1
                     equation += str(predicted_label)
                 else:
-                    equation += str('-1')  # Placeholder for non-MNIST digits
-                
-                confidence = confidence if confidence is not None else 0.0
-                if record_confidence:
-                    confidences.append(confidence)
-                    record_confidence = False
+                    equation += '-1'  # Placeholder for uncertain digits
 
-        # Evaluate the equation
+                confidences.append(confidence)
+                entropy_penalty += self.compute_entropy(predicted_probs)  # Compute entropy
+
+                record_digit = False  # Reset flag after recording one digit
+
         try:
             left_side, right_side = equation.split("=")
             is_correct = eval(left_side) == eval(right_side)
-        except Exception as e:
+        except:
             is_correct = False
 
-        return is_correct, mnist_digit_count, confidences, len(confidences)
+        return is_correct, mnist_digit_count, confidences, len(confidences), entropy_penalty
+
+    def compute_entropy(self, probs):
+        """Compute entropy of a probability distribution."""
+        return -torch.sum(probs * torch.log(probs + 1e-8), dim=-1)    
     
     def decompose_image(self, image, metadata):
         char_images = []
