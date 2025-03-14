@@ -196,7 +196,8 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             correctness_reward = 1.0 if is_correct else -1.0
             # confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences else 0
             # 0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward working
-            total_reward.append(0.25 * mnist_digit_reward + 0.75 * correctness_reward - 0.2 * entropy_penalty)
+            total_reward.append(0.75 * mnist_digit_reward + 0.25 * correctness_reward - 0.1 * entropy_penalty)
+            # total_reward.append(mnist_digit_reward - 0.1 * entropy_penalty)
             # total_reward.append(correctness_reward)
 
         total_reward = sum(total_reward) / len(total_reward)
@@ -213,15 +214,17 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         record_digit = False  # Flag to indicate when to record a digit
 
         for char_img, char in zip(char_images, characters):
-            if char in ["+", "*", "="]:  
+            if char in ["+", "*"]:  
                 equation += char
                 record_digit = True  # Next digit should be recorded
-            elif record_digit:  
+            elif record_digit:
+                # save char image
+                # char_img.save('/users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/char_image.png')
                 predicted_probs = classifier.predict_proba(char_img)  # Get probability distribution
                 predicted_label = torch.argmax(predicted_probs).item()
                 confidence = predicted_probs[predicted_label].item()
 
-                if confidence > 0.8:
+                if confidence > 0.7:
                     mnist_digit_count += 1
                     equation += str(predicted_label)
                 else:
@@ -231,18 +234,25 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                 entropy_penalty += self.compute_entropy(predicted_probs)  # Compute entropy
 
                 record_digit = False  # Reset flag after recording one digit
+            else:
+                equation += char
 
         try:
             left_side, right_side = equation.split("=")
             is_correct = eval(left_side) == eval(right_side)
         except:
             is_correct = False
-
+        # log probs, label and entropy penalty
+        # LOGGER.info(f"Confidences: {confidences}")
+        # LOGGER.info(f"Entropy Penalty: {entropy_penalty}")
+        # LOGGER.info(f"Equation: {equation}")
         return is_correct, mnist_digit_count, confidences, len(confidences), entropy_penalty
 
-    def compute_entropy(self, probs):
-        """Compute entropy of a probability distribution."""
-        return -torch.sum(probs * torch.log(probs + 1e-8), dim=-1)    
+    def compute_entropy(self, probs, confidence_threshold=0.5):
+        confident_preds = probs > confidence_threshold
+        confident_count = torch.sum(confident_preds).item()
+        penalty = max(confident_count - 1, 0)  # penalize multiple confident predictions
+        return penalty
     
     def decompose_image(self, image, metadata):
         char_images = []
