@@ -19,8 +19,8 @@ from saicinpainting.training.modules.fake_fakes import FakeFakesGenerator
 from saicinpainting.training.trainers.base import BaseInpaintingTrainingModule, make_multiscale_noise
 from saicinpainting.utils import add_prefix_to_keys, get_ramp
 
-from saicinpainting.training.trainers.BinaryMNISTClassifier import BinaryMNISTClassifier
-
+# from saicinpainting.training.trainers.BinaryMNISTClassifier import BinaryMNISTClassifier
+from saicinpainting.training.trainers.MNISTClassifier import UnifiedRGBMNISTClassifier
 LOGGER = logging.getLogger(__name__)
 
 
@@ -76,7 +76,8 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         self.fake_fakes_proba = fake_fakes_proba
         if self.fake_fakes_proba > 1e-3:
             self.fake_fakes_gen = FakeFakesGenerator(**(fake_fakes_generator_kwargs or {}))
-
+        self.mnist_classifier = UnifiedRGBMNISTClassifier()
+        self.mnist_classifier.model.eval()  # Set to evaluation mode
         
     def forward(self, batch):
         if self.training and self.rescale_size_getter is not None:
@@ -185,7 +186,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         for i, img in enumerate(generated_images):
             img = unload_image(img)
             char_images, characters = self.decompose_image(img, metadata[i])
-            is_correct, mnist_digit_count, confidences, masked_number_length, entropy_penalty = self.check_equation_correctness(char_images, characters)
+            is_correct, mnist_digit_count, confidences, masked_number_length = self.check_equation_correctness(char_images, characters)
             # LOGGER.info(f"is_correct: {is_correct}")
             # LOGGER.info(f"mnist_digit_count: {mnist_digit_count}")
             # LOGGER.info(f"confidences: {confidences}")
@@ -196,7 +197,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             correctness_reward = 1.0 if is_correct else -1.0
             # confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences else 0
             # 0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward working
-            total_reward.append(0.75 * mnist_digit_reward + 0.25 * correctness_reward - 0.1 * entropy_penalty)
+            total_reward.append(0.75 * mnist_digit_reward + 0.25 * correctness_reward)
             # total_reward.append(mnist_digit_reward - 0.1 * entropy_penalty)
             # total_reward.append(correctness_reward)
 
@@ -205,7 +206,9 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         return total_reward
 
     def check_equation_correctness(self, char_images, characters):
-        classifier = BinaryMNISTClassifier()
+        # classifier = BinaryMNISTClassifier()
+        # classifier = UnifiedRGBMNISTClassifier()
+        # classifier.model.eval()
 
         equation = ""
         mnist_digit_count = 0
@@ -219,19 +222,19 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                 record_digit = True  # Next digit should be recorded
             elif record_digit:
                 # save char image
+                char_img = char_img.convert("RGB") 
                 # char_img.save('/users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/char_image.png')
-                predicted_probs = classifier.predict_proba(char_img)  # Get probability distribution
-                predicted_label = torch.argmax(predicted_probs).item()
-                confidence = predicted_probs[predicted_label].item()
+                predicted_label, confidence = self.mnist_classifier.predict(char_img)  # Get probability distribution
+                # LOGGER.info(f"Predicted Label: {predicted_label}, Confidence: {confidence}")
 
-                if confidence > 0.7:
+                if confidence > 0.5 and predicted_label != 10:
                     mnist_digit_count += 1
                     equation += str(predicted_label)
                 else:
                     equation += '-1'  # Placeholder for uncertain digits
 
                 confidences.append(confidence)
-                entropy_penalty += self.compute_entropy(predicted_probs)  # Compute entropy
+                # entropy_penalty += self.compute_entropy(predicted_probs)  # Compute entropy
 
                 record_digit = False  # Reset flag after recording one digit
             else:
@@ -246,7 +249,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         # LOGGER.info(f"Confidences: {confidences}")
         # LOGGER.info(f"Entropy Penalty: {entropy_penalty}")
         # LOGGER.info(f"Equation: {equation}")
-        return is_correct, mnist_digit_count, confidences, len(confidences), entropy_penalty
+        return is_correct, mnist_digit_count, confidences, len(confidences)
 
     def compute_entropy(self, probs, confidence_threshold=0.5):
         confident_preds = probs > confidence_threshold
