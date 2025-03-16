@@ -172,7 +172,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             metrics['gen_resnet_pl'] = resnet_pl_value
         symmetry_reward = self.compute_mnist_reward(predicted_img, metadata)
         # now lamda is set to 0.1, working for now
-        scaled_loss = torch.exp(-0.1 *symmetry_reward) * total_loss
+        scaled_loss = torch.exp(-0.2 *symmetry_reward) * total_loss
         # LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
         # LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
         # LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")
@@ -187,17 +187,16 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             img = unload_image(img)
             char_images, characters = self.decompose_image(img, metadata[i])
             is_correct, mnist_digit_count, confidences, masked_number_length = self.check_equation_correctness(char_images, characters)
-            # LOGGER.info(f"is_correct: {is_correct}")
-            # LOGGER.info(f"mnist_digit_count: {mnist_digit_count}")
-            # LOGGER.info(f"confidences: {confidences}")
-            # LOGGER.info(f"masked_number_length: {masked_number_length}")
+            LOGGER.info(f"is_correct: {is_correct}")
+            LOGGER.info(f"mnist_digit_count: {mnist_digit_count}")
+            LOGGER.info(f"masked_number_length: {masked_number_length}")
 
             # Compute reward based on MNIST digit presence and equation correctness
             mnist_digit_reward = mnist_digit_count / max(masked_number_length, 1)  # Fraction of valid MNIST digits
             correctness_reward = 1.0 if is_correct else -1.0
-            # confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences else 0
+            confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences and mnist_digit_count != 0 else 0
             # 0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward working
-            total_reward.append(0.75 * mnist_digit_reward + 0.25 * correctness_reward)
+            total_reward.append(0.75 * mnist_digit_reward + 0.25 * correctness_reward + 0.2 * confidence_reward)
             # total_reward.append(mnist_digit_reward - 0.1 * entropy_penalty)
             # total_reward.append(correctness_reward)
 
@@ -221,11 +220,16 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                 equation += char
                 record_digit = True  # Next digit should be recorded
             elif record_digit:
-                # save char image
-                char_img = char_img.convert("RGB") 
-                # char_img.save('/users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/char_image.png')
-                predicted_label, confidence = self.mnist_classifier.predict(char_img)  # Get probability distribution
-                # LOGGER.info(f"Predicted Label: {predicted_label}, Confidence: {confidence}")
+                # Convert to RGB and resize to 28x28 (as required by classifier)
+                char_img_pil = char_img.convert("RGB").resize((28, 28))
+
+                # Save for debugging
+                char_img_pil.save('/users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/predicted_image.png')
+
+                # Predict digit using the classifier
+                with torch.no_grad():
+                    predicted_label, confidence = self.mnist_classifier.predict(char_img_pil)
+                LOGGER.info(f"Predicted Label: {predicted_label}, Confidence: {confidence}")
 
                 if confidence > 0.5 and predicted_label != 10:
                     mnist_digit_count += 1
