@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torchvision import models
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
-
+import time
 import torch.nn as nn
 from omegaconf import OmegaConf
 import numpy  as np
@@ -172,7 +172,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             metrics['gen_resnet_pl'] = resnet_pl_value
         symmetry_reward = self.compute_mnist_reward(predicted_img, metadata)
         # now lamda is set to 0.1, working for now
-        scaled_loss = torch.exp(-0.2 *symmetry_reward) * total_loss
+        scaled_loss = torch.exp(-0.1 *symmetry_reward) * total_loss
         # LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
         # LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
         # LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")
@@ -223,19 +223,22 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                 # Convert to RGB and resize to 28x28 (as required by classifier)
                 char_img_pil = char_img.convert("RGB").resize((28, 28))
 
-                # Save for debugging
-                char_img_pil.save('/users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/predicted_image.png')
+                # # Save for debugging
+                # char_img_pil.save('/users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/predicted_image.png')
 
                 # Predict digit using the classifier
                 with torch.no_grad():
                     predicted_label, confidence = self.mnist_classifier.predict(char_img_pil)
                 LOGGER.info(f"Predicted Label: {predicted_label}, Confidence: {confidence}")
 
-                if confidence > 0.5 and predicted_label != 10:
+                if confidence > 0.7 and predicted_label != 10:
                     mnist_digit_count += 1
                     equation += str(predicted_label)
                 else:
                     equation += '-1'  # Placeholder for uncertain digits
+                    # save to a folder contains failed images with timestamp as its name
+                    # char_img_pil.save(f'/users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/trash/{str(int(time.time()))}.png')
+
 
                 confidences.append(confidence)
                 # entropy_penalty += self.compute_entropy(predicted_probs)  # Compute entropy
