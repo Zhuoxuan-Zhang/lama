@@ -172,7 +172,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             metrics['gen_resnet_pl'] = resnet_pl_value
         symmetry_reward = self.compute_mnist_reward(predicted_img, metadata)
         # now lamda is set to 0.1, working for now
-        scaled_loss = torch.exp(-0.05 *symmetry_reward) * total_loss
+        scaled_loss = torch.exp(-1 *symmetry_reward) * total_loss
         # LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
         # LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
         # LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")
@@ -196,7 +196,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             correctness_reward = 1.0 if is_correct else -1.0
             confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences and mnist_digit_count != 0 else 0
             # 0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward working
-            total_reward.append(mnist_digit_reward + 0.75 * correctness_reward)
+            total_reward.append(correctness_reward)
             # total_reward.append(mnist_digit_reward - 0.1 * entropy_penalty)
             # total_reward.append(correctness_reward)
 
