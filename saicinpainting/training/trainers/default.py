@@ -78,10 +78,6 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             self.fake_fakes_gen = FakeFakesGenerator(**(fake_fakes_generator_kwargs or {}))
         self.mnist_classifier = UnifiedRGBMNISTClassifier()
         self.mnist_classifier.model.eval()  # Set to evaluation mode
-
-        self.digit_history = {i: 1 for i in range(10)}  # Start with equal counts
-        self.history_size = 1000  # Number of past samples to track
-        self.decay_factor = 0.99  # Gradual decay to adapt over time
         
     def forward(self, batch):
         if self.training and self.rescale_size_getter is not None:
@@ -176,8 +172,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             metrics['gen_resnet_pl'] = resnet_pl_value
         symmetry_reward = self.compute_mnist_reward(predicted_img, metadata)
         # now lamda is set to 0.1, working for now
-        # scaled_loss = torch.exp(-1 *symmetry_reward) * total_loss
-        scaled_loss = (1 / (1 + torch.exp(-symmetry_reward))) * total_loss
+        scaled_loss = torch.exp(-1 *symmetry_reward) * total_loss
         # LOGGER.info(f"Symmetry Reward (Mean): {symmetry_reward.item():.4f}")
         # LOGGER.info(f"Total Loss Before Scaling: {total_loss.item():.4f}")
         # LOGGER.info(f"Scaled Loss After Reward: {scaled_loss.item():.4f}")
@@ -185,54 +180,29 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
     
     def compute_mnist_reward(self, generated_images, metadata):
         """
-        Compute the reward based on the MNIST equation inpainting
+        Compute the reward based on the mnist equation inpainting
         """
         total_reward = []
-        
-        # Track how often each digit appears in this batch
-        batch_digit_counts = {i: 0 for i in range(10)}
-
         for i, img in enumerate(generated_images):
             img = unload_image(img)
             char_images, characters = self.decompose_image(img, metadata[i])
-            is_correct, mnist_digit_count, confidences, masked_number_length, predicted_label = self.check_equation_correctness(char_images, characters)
-            
+            is_correct, mnist_digit_count, confidences, masked_number_length = self.check_equation_correctness(char_images, characters)
             LOGGER.info(f"is_correct: {is_correct}")
             LOGGER.info(f"mnist_digit_count: {mnist_digit_count}")
             LOGGER.info(f"masked_number_length: {masked_number_length}")
 
             # Compute reward based on MNIST digit presence and equation correctness
-            mnist_digit_reward = mnist_digit_count / max(masked_number_length, 1)  
+            mnist_digit_reward = mnist_digit_count / max(masked_number_length, 1)  # Fraction of valid MNIST digits
             correctness_reward = 1.0 if is_correct else -1.0
             confidence_reward = sum(confidences) / max(masked_number_length, 1) if confidences and mnist_digit_count != 0 else 0
-            base_reward = mnist_digit_reward + correctness_reward
-            total_reward.append(base_reward)
+            # 0.5 * mnist_digit_reward + 0.3 * correctness_reward + 0.2 * confidence_reward working
+            total_reward.append(correctness_reward)
+            # total_reward.append(mnist_digit_reward - 0.1 * entropy_penalty)
+            # total_reward.append(correctness_reward)
 
-            if predicted_label is not None:
-                if predicted_label not in self.digit_history:
-                    self.digit_history[predicted_label] = 1  # Initialize if missing
-                self.digit_history[predicted_label] += 1  # Update global history
-
-                # Track occurrences of predicted digits in this batch
-                batch_digit_counts[predicted_label] += 1
-
-        # Compute digit diversity penalty after the loop
-        total_samples = sum(self.digit_history.values()) + 1e-6  # Avoid division by zero
-        digit_probs = np.array([self.digit_history[i] / total_samples for i in range(10)])
-
-        # Directly penalize overrepresented digits instead of just entropy
-        freq_penalty = np.array([1.0 / (self.digit_history[i] + 1) for i in range(10)])  # Higher penalty for frequent digits
-        diversity_penalty = np.sum(freq_penalty)  # Sum up penalties
-
-        # Apply gradual decay to history (prevents long-term bias)
-        for digit in self.digit_history:
-            self.digit_history[digit] = self.digit_history[digit] * self.decay_factor + 1
-
-        LOGGER.info(f"diversity_penalty: {10 * diversity_penalty}")
-
-        # Compute final reward
-        final_reward = (sum(total_reward) / len(total_reward)) + 10 * diversity_penalty
-        return torch.tensor(final_reward).to(generated_images.device)
+        total_reward = sum(total_reward) / len(total_reward)
+        total_reward = torch.tensor(total_reward).to(generated_images.device)
+        return total_reward
 
     def check_equation_correctness(self, char_images, characters):
         # classifier = BinaryMNISTClassifier()
@@ -268,7 +238,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
                     equation += '-1'  # Placeholder for uncertain digits
                     # save to a folder contains failed images with timestamp as its name
                     # char_img_pil.save(f'/users/zzhan513/data/zzhan513/visual_reasoning/train_lama/lama/trash/{str(int(time.time()))}.png')
-                    predicted_label = None
+
 
                 confidences.append(confidence)
                 # entropy_penalty += self.compute_entropy(predicted_probs)  # Compute entropy
@@ -286,8 +256,7 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
         # LOGGER.info(f"Confidences: {confidences}")
         # LOGGER.info(f"Entropy Penalty: {entropy_penalty}")
         # LOGGER.info(f"Equation: {equation}")
-
-        return is_correct, mnist_digit_count, confidences, len(confidences), predicted_label
+        return is_correct, mnist_digit_count, confidences, len(confidences)
 
     def compute_entropy(self, probs, confidence_threshold=0.5):
         confident_preds = probs > confidence_threshold
